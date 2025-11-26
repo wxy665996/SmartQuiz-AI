@@ -1,17 +1,30 @@
 import React, { useCallback, useState } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle2, FileType } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle, FileType } from 'lucide-react';
 import { Button } from './Button';
 import { parseDocumentToQuiz } from '../services/geminiService';
 import { Question } from '../types';
-import mammoth from 'mammoth';
+import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Handle potential ESM default export mismatch for pdfjs-dist
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
 
-// Initialize PDF worker
-if (pdfjs.GlobalWorkerOptions) {
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+// Robustly initialize PDF worker
+try {
+  if (pdfjs) {
+    // Define worker source URL
+    const workerUrl = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+    
+    // Safely assign workerSrc
+    if (pdfjs.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+    } else {
+      // If GlobalWorkerOptions doesn't exist yet, create it (rare but possible in some builds)
+      (pdfjs as any).GlobalWorkerOptions = { workerSrc: workerUrl };
+    }
+  }
+} catch (e) {
+  console.warn("Failed to initialize PDF worker:", e);
 }
 
 interface FileUploaderProps {
@@ -74,6 +87,11 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onQuizGenerated, api
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
+    
+    if (!pdfjs) {
+        throw new Error("PDF Library failed to load. Please try refreshing the page.");
+    }
+
     // Use the resolved pdfjs object here
     const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
     let fullText = "";
@@ -100,11 +118,18 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onQuizGenerated, api
       if (fileName.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
            try {
                const arrayBuffer = await file.arrayBuffer();
-               const result = await mammoth.extractRawText({ arrayBuffer });
+               // mammoth might be a default export or named export depending on environment
+               const mammothLib = (mammoth as any).default || mammoth;
+               
+               if (!mammothLib || !mammothLib.extractRawText) {
+                   throw new Error("Word processor library not initialized.");
+               }
+               
+               const result = await mammothLib.extractRawText({ arrayBuffer });
                extractedText = result.value;
            } catch (docxError: any) {
                console.error("Docx parsing error", docxError);
-               throw new Error("Failed to read Word document. Please ensure it is a valid .docx file.");
+               throw new Error(`Failed to read Word document: ${docxError.message || 'Unknown error'}`);
            }
       } 
       // 2. PDF Extraction
@@ -138,6 +163,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onQuizGenerated, api
       setFile(null);
       
     } catch (err: any) {
+      console.error("Processing error:", err);
       setError(err.message || "Failed to process file.");
     } finally {
       setIsProcessing(false);
@@ -177,7 +203,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onQuizGenerated, api
         {file ? (
           <div className="text-center z-10 pointer-events-none">
             <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
-              <CheckCircle2 size={24} />
+              <CheckCircle size={24} />
             </div>
             <p className="font-medium text-slate-900">{file.name}</p>
             <p className="text-xs text-slate-500 mt-1">{(file.size / 1024).toFixed(1)} KB</p>
