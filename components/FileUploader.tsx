@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { Upload, AlertCircle, CheckCircle, FileType } from 'lucide-react';
 import { Button } from './Button';
 import { parseDocumentToQuiz } from '../services/geminiService';
@@ -8,24 +8,6 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 // Handle potential ESM default export mismatch for pdfjs-dist
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
-
-// Robustly initialize PDF worker
-try {
-  if (pdfjs) {
-    // Define worker source URL
-    const workerUrl = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
-    
-    // Safely assign workerSrc
-    if (pdfjs.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    } else {
-      // If GlobalWorkerOptions doesn't exist yet, create it (rare but possible in some builds)
-      (pdfjs as any).GlobalWorkerOptions = { workerSrc: workerUrl };
-    }
-  }
-} catch (e) {
-  console.warn("Failed to initialize PDF worker:", e);
-}
 
 interface FileUploaderProps {
   onQuizGenerated: (name: string, questions: Question[]) => void;
@@ -37,6 +19,25 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onQuizGenerated, api
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Safely initialize PDF worker on mount, NOT at module level
+  useEffect(() => {
+    const initWorker = async () => {
+      if (typeof window !== 'undefined' && pdfjs) {
+        try {
+           const workerUrl = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+           if (pdfjs.GlobalWorkerOptions) {
+             pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+           } else {
+             (pdfjs as any).GlobalWorkerOptions = { workerSrc: workerUrl };
+           }
+        } catch (e) {
+          console.warn("PDF worker init warning:", e);
+        }
+      }
+    };
+    initWorker();
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();

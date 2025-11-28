@@ -14,14 +14,20 @@ const MISTAKES_KEY = 'smartquiz_mistakes_v1';
 // Threshold to remove from mistakes (mastery)
 const MASTERY_THRESHOLD = 3;
 
-// Error Boundary Component
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+interface ErrorBoundaryProps {
+  children?: React.ReactNode;
+}
 
-  static getDerivedStateFromError(error: Error) {
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
@@ -77,7 +83,19 @@ export default function App() {
   const [editingBankId, setEditingBankId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  const apiKey = process.env.API_KEY || '';
+  // Safely retrieve API key to prevent crashes if process is undefined
+  const getApiKey = () => {
+    try {
+      if (typeof process !== 'undefined' && process.env) {
+        return process.env.API_KEY || '';
+      }
+    } catch (e) {
+      // Ignore reference errors
+    }
+    return '';
+  };
+
+  const apiKey = getApiKey();
 
   useEffect(() => {
     // Load banks
@@ -136,9 +154,9 @@ export default function App() {
         const question = finishedSession.questions.find(q => q.id === qId);
         if (!question) return;
 
-        // Check Correctness
-        const correctSet = new Set(question.correctIndices);
-        const userSet = new Set(userIndices);
+        // Check Correctness - STRICT STRING COMPARISON
+        const correctSet = new Set(question.correctIndices.map(String));
+        const userSet = new Set(userIndices.map(String));
         let isRight = correctSet.size === userSet.size;
         if (isRight) for (let a of correctSet) if (!userSet.has(a)) isRight = false;
 
@@ -357,7 +375,12 @@ export default function App() {
   // Main Render
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans relative">
+      {/* 
+        Adding "notranslate" and translate="no" is critical to prevent Google Translate 
+        and browser extensions from modifying the DOM, which causes the 
+        "Failed to execute 'insertBefore' on 'Node'" crash in React.
+      */}
+      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans relative notranslate" translate="no">
         {/* Header */}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -373,7 +396,7 @@ export default function App() {
             {view === 'HOME' && (
               <Button size="sm" onClick={() => setShowUpload(!showUpload)} variant={showUpload ? 'secondary' : 'primary'}>
                 {showUpload ? 'Cancel' : 'New Import'}
-                {!showUpload && <Plus className="ml-2 w-4 h-4" />}
+                {!showUpload && <span className="ml-2 inline-flex"><Plus className="w-4 h-4" /></span>}
               </Button>
             )}
           </div>
@@ -381,7 +404,7 @@ export default function App() {
 
         <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
           {view === 'HOME' && (
-            <>
+            <div key="home-view">
               {showUpload && (
                 <div className="mb-10 animate-fade-in-down">
                   <FileUploader onQuizGenerated={handleQuizGenerated} apiKey={apiKey} />
@@ -571,11 +594,11 @@ export default function App() {
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {view === 'QUIZ' && session && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 h-[calc(100vh-8rem)]">
+            <div key="quiz-view" className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 h-[calc(100vh-8rem)]">
               <QuizView 
                 session={session}
                 onUpdateSession={setSession}
@@ -586,21 +609,23 @@ export default function App() {
           )}
 
           {view === 'RESULT' && session && (
-            <ResultView 
-              session={session} 
-              onRetry={() => {
-                setSession({
-                  ...session,
-                  currentQuestionIndex: 0,
-                  answers: {},
-                  status: 'active',
-                  startTime: Date.now(),
-                  timeRemaining: session.config.timeLimit // Reset timer
-                });
-                setView('QUIZ');
-              }}
-              onHome={() => setView('HOME')}
-            />
+            <div key="result-view">
+              <ResultView 
+                session={session} 
+                onRetry={() => {
+                  setSession({
+                    ...session,
+                    currentQuestionIndex: 0,
+                    answers: {},
+                    status: 'active',
+                    startTime: Date.now(),
+                    timeRemaining: session.config.timeLimit // Reset timer
+                  });
+                  setView('QUIZ');
+                }}
+                onHome={() => setView('HOME')}
+              />
+            </div>
           )}
         </main>
 

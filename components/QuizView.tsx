@@ -51,10 +51,6 @@ export const QuizView: React.FC<QuizViewProps> = ({ session, onUpdateSession, on
     return () => {
         clearInterval(timer);
         // CRITICAL FIX: Removed the onUpdateSession call here.
-        // Previously, this cleanup function captured a STALE 'session' variable from when the effect started.
-        // When the component unmounted (at exam finish), it would overwrite the fresh state (with answers) 
-        // with the stale state (no answers), resulting in a score of 0.
-        // Time is already saved via updateSessionSafe whenever the user interacts (Next/Prev/Submit).
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.status]);
@@ -71,7 +67,6 @@ export const QuizView: React.FC<QuizViewProps> = ({ session, onUpdateSession, on
   const currentSelections = session.answers[currentQ.id] || [];
   
   // Derived state: Is the current question submitted?
-  // We rely on props to ensure data roundtrip is complete before unlocking Next/Finish.
   const [isSubmitted, setIsSubmitted] = useState(!!session.answers[currentQ.id]);
   
   const [draftSelection, setDraftSelection] = useState<number[]>(
@@ -141,11 +136,13 @@ export const QuizView: React.FC<QuizViewProps> = ({ session, onUpdateSession, on
     handleNext();
   };
 
-  // Check correctness for UI feedback
+  // Check correctness for UI feedback - ROBUST COMPARISON
   const isDraftCorrect = useMemo(() => {
      if (!isSubmitted) return false;
-     const correctSet = new Set(currentQ.correctIndices);
-     const userSet = new Set(draftSelection);
+     // Convert to strings to avoid "1" vs 1 mismatches
+     const correctSet = new Set(currentQ.correctIndices.map(String));
+     const userSet = new Set(draftSelection.map(String));
+     
      if (correctSet.size !== userSet.size) return false;
      for (let a of correctSet) if (!userSet.has(a)) return false;
      return true;
@@ -331,8 +328,8 @@ export const QuizView: React.FC<QuizViewProps> = ({ session, onUpdateSession, on
                   } else if (status) {
                       if (session.config.instantFeedback) {
                            // Color coded by correctness if feedback is on
-                           const correctSet = new Set(q.correctIndices);
-                           const userSet = new Set(status);
+                           const correctSet = new Set(q.correctIndices.map(String));
+                           const userSet = new Set(status.map(String));
                            let isRight = correctSet.size === userSet.size;
                            if(isRight) for(let a of correctSet) if(!userSet.has(a)) isRight = false;
                            colorClass = isRight ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700";

@@ -25,7 +25,7 @@ const parseSchema: Schema = {
           correctIndices: {
             type: Type.ARRAY,
             items: { type: Type.INTEGER },
-            description: "Array of 0-based indices corresponding to the correct options.",
+            description: "Array of 0-based indices corresponding to the correct options. For Multiple Choice, MUST include ALL correct indices.",
           },
           explanation: {
             type: Type.STRING,
@@ -126,6 +126,7 @@ export const parseDocumentToQuiz = async (
               Rules:
               - Clean extracted options (remove 'A.', 'B.', '1)' prefixes).
               - Determine 0-based correct indices.
+              - FOR MULTIPLE CHOICE: Ensure ALL correct options are listed in 'correctIndices'. Missing any correct option is a critical error.
               - Provide an explanation in the original language.`,
             },
           ],
@@ -182,8 +183,6 @@ export const parseDocumentToQuiz = async (
   });
 
   if (allQuestions.length === 0) {
-     // If pure text extraction failed to yield results, user might have uploaded something else or empty.
-     // But we return empty array here and let FileUploader handle the error message.
      return [];
   }
 
